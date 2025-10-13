@@ -1,319 +1,290 @@
-# Inventory Management System with Supplier Integration
+# 🧩 Inventory Management System with Supplier Integration
 
-## Overview
+Track stock, calculate dynamic reorder points from demand stats, and place supplier orders automatically or on demand.  
+Includes a **Vue dashboard** and a **.NET API** backed by **PostgreSQL**, with an in-memory Pub/Sub message broker and a mock Supplier API for asynchronous delivery simulation.
 
-A comprehensive inventory management system built with .NET 8 that monitors stock levels, predicts demand-based reorder points, and automates supplier interactions through webhooks. The system features real-time stock monitoring, automatic reorder triggers, and demand forecasting capabilities.
+---
 
-## Architecture & Design
+## 🚀 Quick Setup Guide
 
-### System Architecture
+### 1️⃣ Backend Setup (.NET + PostgreSQL)
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   Backend API   │    │   Database      │
-│   (Vue)       │◄──►│   (.NET 8)      │◄──►│   (Postgres)      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                              │
-                              ▼
-                       ┌─────────────────┐
-                       │  Message Queue  │
-                       │  (In-Memory)    │
-                       └─────────────────┘
-                              │
-                              ▼
-                       ┌─────────────────┐
-                       │ Background Jobs │
-                       │ & Services      │
-                       └─────────────────┘
-```
+**From `/backend`:**
 
-### Project Structure
+```bash
+# restore dependencies
+dotnet restore
 
-The solution follows Clean Architecture principles with clear separation of concerns:
+#if needed
 
-- **`Inventory.Domain`** - Core business entities and interfaces
-- **`Inventory.Infrastructure`** - Data persistence and external services
-- **`Inventory.App`** - Application services and business logic
-- **`Inventory.Api`** - REST API controllers and web configuration
+dotnet sln add Inventory.Api/ Inventory.Domain/ Inventory.App/ Inventory.Infrastructure/
+dotnet add Inventory.Api reference ../Inventory.App ../Inventory.Domain ../Inventory.Infrastructure
+dotnet add Inventory.App reference ../Inventory.Domain
+dotnet add Inventory.Infrastructure reference ../Inventory.Domain
 
-## Technical Stack
+dotnet add Inventory.Infrastructure reference ../Inventory.Domain
+dotnet add Inventory.Infrastructure reference ../Inventory.Domain
 
-- **Backend**: .NET 8 (ASP.NET Core Web API)
-- **Database**: SQLite with Entity Framework Core
-- **Message Broker**: In-memory pub/sub system (production-ready for RabbitMQ)
-- **Authentication**: None (development setup)
-- **Documentation**: Swagger/OpenAPI
+dotnet add Inventory.Infrastructure package Microsoft.EntityFrameworkCore
+dotnet add Inventory.Infrastructure package Microsoft.EntityFrameworkCore.Sqlite
+dotnet add Inventory.Infrastructure package Microsoft.EntityFrameworkCore.Design
 
-## Key Features
+# Tools
+dotnet tool install --global dotnet-ef
 
-### 1. Inventory Management
-- **Stock Tracking**: Real-time monitoring of item stock levels
-- **Dynamic Reorder Points**: Automatic calculation based on demand forecasting
-- **Manual Overrides**: Admin capability to set custom reorder thresholds
-- **Stock Status**: Visual indicators (OK/Low) based on current stock vs reorder points
+dotnet add Inventory.App package AutoMapper
+dotnet add Inventory.App package FluentValidation
 
-### 2. Demand Forecasting
-- **Algorithm**: `Reorder Point = (Avg Daily Demand × Lead Time) + Safety Stock`
-- **Rolling Statistics**: Maintains 30-day demand history per item
-- **Automatic Updates**: Daily recalculation of reorder points
-- **Demand Simulation**: Background service simulates realistic demand patterns
+dotnet add Inventory.Api package AutoMapper.Extensions.Microsoft.DependencyInjection
 
-### 3. Supplier Integration
-- **Order Placement**: Automated supplier order creation when stock is low
-- **Webhook Integration**: Asynchronous order confirmation handling
-- **Status Tracking**: Real-time order status updates (Pending/Confirmed/Failed)
-- **Inventory Updates**: Automatic stock replenishment on confirmed orders
+dotnet add Inventory.Api package Microsoft.Extensions.Http
 
-### 4. Real-time Monitoring
-- **Background Services**: Continuous stock level monitoring
-- **Event-Driven**: Pub/sub messaging for low stock alerts
-- **Automated Triggers**: Instant reorder when stock drops below threshold
+# generate migration (ensure AppDbContext is in Inventory.Infrastructure)
+dotnet ef migrations add InitialCreate -p Inventory.Infrastructure -s Inventory.Api
 
-## API Endpoints
+# apply migrations to PostgreSQL
+dotnet ef database update -p Inventory.Infrastructure -s Inventory.Api
 
-### Items Management
-```http
-GET    /api/items                    # List all items with status
-POST   /api/items                    # Add new item
-PUT    /api/items/{id}               # Update item details
-GET    /api/items/{id}               # Get specific item
-PATCH  /api/items/{id}/reorder-threshold  # Set manual reorder point
-PATCH  /api/items/{id}/force-reorder      # Force reorder trigger
-GET    /api/items/{id}/demand             # Get 30-day demand history
-PATCH  /api/items/{id}/recompute          # Recalculate reorder point
-```
+# run the API
+dotnet run --project Inventory.Api
+Default URL: http://localhost:5000
 
-### Supplier Operations
-```http
-POST   /supplier/place-order         # Place order with supplier
-POST   /webhook/order-confirmation   # Webhook for order status updates
-```
-
-## Data Models
-
-### Core Entities
-
-#### Item
-```csharp
-public class Item {
-    public Guid Id { get; set; }
-    public string Sku { get; set; }           // Stock Keeping Unit
-    public string Name { get; set; }          // Item name
-    public int Stock { get; set; }            // Current stock level
-    public int LeadTimeDays { get; set; }     // Supplier lead time
-    public int SafetyStock { get; set; }      // Minimum safety buffer
-    public int? ManualReorderPoint { get; set; }  // Manual override
-    public int ComputedReorderPoint { get; set; } // Auto-calculated
-}
-```
-
-#### DemandStat
-```csharp
-public class DemandStat {
-    public long Id { get; set; }
-    public Guid ItemId { get; set; }
-    public DateTime Day { get; set; }         // Daily demand tracking
-    public int Quantity { get; set; }         // Demand quantity
-}
-```
-
-#### SupplierOrder
-```csharp
-public class SupplierOrder {
-    public Guid Id { get; set; }
-    public Guid ItemId { get; set; }
-    public int Quantity { get; set; }
-    public DateTime RequestedDeliveryDate { get; set; }
-    public OrderStatus Status { get; set; }   // Pending/Confirmed/Failed
-    public string? SupplierRef { get; set; }  // Supplier reference number
-}
-```
-
-## Business Logic Flow
-
-### 1. Stock Monitoring Flow
-```
-Stock Update → Check Reorder Point → Below Threshold? → Publish Event → Auto-Order
-```
-
-### 2. Demand Forecasting Flow
-```
-Daily Demand Data → Calculate 30-Day Average → Apply Lead Time → Add Safety Stock → Update Reorder Point
-```
-
-### 3. Supplier Integration Flow
-```
-Low Stock Event → Create Supplier Order → Send to Supplier API → Receive Webhook → Update Stock
-```
-
-## Background Services
-
-### InventoryMonitor
-- **Purpose**: Continuously monitors stock levels every 10 seconds
-- **Action**: Publishes `StockLowEvent` when stock drops below reorder point
-- **Impact**: Triggers automatic supplier orders
-
-### DemandSimulator
-- **Purpose**: Simulates realistic demand patterns for testing
-- **Schedule**: Daily updates with random demand increments
-- **Data**: Generates 30-day rolling demand statistics
-
-## Setup Instructions
-
-### Prerequisites
-- .NET 8 SDK
-- Visual Studio 2022 or VS Code
-- SQLite (included with .NET)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd backend
-   ```
-
-2. **Restore dependencies**
-   ```bash
-   dotnet restore
-   ```
-
-3. **Apply database migrations**
-   ```bash
-   dotnet ef database update --project Inventory.Infrastructure --startup-project Inventory.Api
-   ```
-
-4. **Run the application**
-   ```bash
-   dotnet run --project Inventory.Api
-   ```
-
-5. **Access the API**
-   - API: `https://localhost:5001`
-   - Swagger UI: `https://localhost:5001/swagger`
-
-### Seed Data
-
-The application automatically seeds with sample items:
-- **Widget A** (SKU-001): 12 units, 5 safety stock, 2-day lead time
-- **Widget B** (SKU-002): 3 units, 6 safety stock, 4-day lead time
-
-## Configuration
-
-### Database Connection
-```json
+⚙️ Configuration (/backend/Inventory.Api/appsettings.Development.json)
+json
+Copy code
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Data Source=inventory.db"
+    "DefaultConnection": "Host=localhost;Port=5432;Database=inventory_db;Username=postgres;Password=postgres"
+  },
+  "Cors": {
+    "AllowedOrigins": [ "http://localhost:5173" ]
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Warning",
+      "Microsoft.Hosting.Lifetime": "Information"
+    }
   }
 }
-//Need to updaet postgres
+Change database or frontend origin as needed.
+
+To use SQLite for local testing:
+
+json
+Copy code
+"ConnectionStrings": { "DefaultConnection": "Data Source=inventory.db" }
+2️⃣ Frontend Setup (Vue 3 + Vite)
+From /frontend:
+
+bash
+Copy code
+# install dependencies
+npm install
+
+# (optional) install Tailwind fix
+npm i -D tailwindcss @tailwindcss/postcss postcss autoprefixer
+Vite Config (vite.config.ts)
+ts
+Copy code
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import path from 'path'
+
+export default defineConfig({
+  plugins: [vue()],
+  resolve: { alias: { '@': path.resolve(__dirname, './src') } }
+})
+TypeScript Config (tsconfig.app.json)
+json
+Copy code
 {
-    
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] }
+  }
 }
-```
+Environment File (/frontend/.env)
+ini
+Copy code
+VITE_API_BASE_URL=http://localhost:5000
+Run Frontend:
 
-### CORS Policy
-Configured to allow all origins for development (update for production):
-```csharp
-policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
-```
+bash
+Copy code
+npm run dev
+Default URL: http://localhost:5173
 
-## Key Algorithms
+3️⃣ (Optional) Seed Sample Data
+Add a one-time seeding endpoint or startup code:
 
-### Reorder Point Calculation
-```csharp
-var avgDailyDemand = await GetLast30DaysAverage(itemId);
-var reorderPoint = (avgDailyDemand * leadTimeDays) + safetyStock;
-```
+csharp
+Copy code
+// POST /api/dev/seed
+if (!await db.Items.AnyAsync()) {
+    // create ~15 items, demand stats, and sample supplier orders
+    await db.SaveChangesAsync();
+}
+4️⃣ (Optional) Run via Docker Compose
+Create /docker-compose.yml at repo root:
 
-### Stock Status Determination
-```csharp
-var threshold = item.ManualReorderPoint ?? item.ComputedReorderPoint;
-var status = (threshold > 0 && item.Stock < threshold) ? "Low" : "OK";
-```
+yaml
+Copy code
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: inventory_db
+    ports: ["5432:5432"]
 
-## Testing & Development
+  api:
+    build: ./backend/Inventory.Api
+    environment:
+      ASPNETCORE_URLS: http://+:5000
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=inventory_db;Username=postgres;Password=postgres
+      Cors__AllowedOrigins__0: http://localhost:5173
+    depends_on: [db]
+    ports: ["5000:5000"]
 
-### Sample API Calls
+  web:
+    build: ./frontend
+    command: ["npm", "run", "dev", "--", "--host"]
+    environment:
+      VITE_API_BASE_URL: http://localhost:5000
+    depends_on: [api]
+    ports: ["5173:5173"]
 
-1. **Add New Item**
-   ```json
-   POST /api/items
-   {
-     "sku": "SKU-003",
-     "name": "Widget C",
-     "stock": 20,
-     "leadTimeDays": 3,
-     "safetyStock": 8
-   }
-   ```
+volumes:
+  db_data:
+🔌 API Endpoints
+🧱 Inventory
+Method	Endpoint	Description	Body Example
+GET	/api/items?q=&page=&pageSize=	List inventory items with pagination	–
+POST	/api/items	Create new item	{ "sku": "SKU123", "name": "Widget", "stock": 50, "safetyStock": 5 }
+PATCH	/api/items/{id}/reorder-threshold	Set manual reorder threshold (nullable int)	10 or null
+PATCH	/api/items/{id}/force-reorder	Manually trigger supplier order	{ "quantity": 10, "deliveryDate": "2025-10-16" }
 
-2. **Set Manual Reorder Threshold**
-   ```json
-   PATCH /api/items/{id}/reorder-threshold
-   {
-     "reorderPoint": 15,
-     "safetyStock": 10
-   }
-   ```
+📈 Demand
+Method	Endpoint	Description
+GET	/api/demand/{itemId}?days=30	Get last N days of demand stats for item
 
-3. **Force Reorder**
-   ```json
-   PATCH /api/items/{id}/force-reorder
-   Content-Type: application/json
-   
-   25
-   ```
+📦 Orders
+Method	Endpoint	Description
+GET	/api/orders?page=&pageSize=	List supplier orders (Pending/Delivered)
 
-## Future Enhancements
+🧪 Simulation & Development
+Method	Endpoint	Description
+POST	/api/simulate/demand	Simulate daily demand decay/increment
+POST	/api/dev/seed	Seed sample data (items, demand stats, orders)
 
-### Planned Features
-- **React Frontend**: Dashboard with real-time charts and inventory management
-- **Docker Support**: Containerized deployment with docker-compose
-- **RabbitMQ Integration**: Production-grade message queuing
-- **PostgreSQL**: Enterprise database support
-- **Authentication**: JWT-based security
-- **Multi-tenant**: Support for multiple organizations
-- **Advanced Analytics**: ML-based demand forecasting
-- **Mobile App**: React Native mobile interface
+🔔 Supplier Webhooks
+Method	Endpoint	Description
+POST	/api/webhooks/supplier	Supplier posts order updates
 
-### Production Considerations
-- Replace SQLite with PostgreSQL/SQL Server
-- Implement proper authentication and authorization
-- Add comprehensive logging and monitoring
-- Set up CI/CD pipelines
-- Configure environment-specific settings
-- Add unit and integration tests
-- Implement proper error handling and validation
+🧠 What Each Service Does
+🏭 Inventory Service (Backend API)
+Built in .NET 8 with EF Core and PostgreSQL
 
-## Architecture Benefits
+Handles:
 
-### Scalability
-- **Clean Architecture**: Easy to extend and modify
-- **Dependency Injection**: Loosely coupled components
-- **Background Services**: Non-blocking operations
-- **Event-Driven**: Responsive to real-time changes
+CRUD for items
 
-### Maintainability
-- **Separation of Concerns**: Clear module boundaries
-- **SOLID Principles**: Well-structured codebase
-- **Entity Framework**: Database abstraction
-- **Swagger Documentation**: Self-documenting API
+Demand tracking
 
-### Reliability
-- **Transactional Operations**: Data consistency
-- **Error Handling**: Graceful failure management
-- **Idempotent Operations**: Safe retry mechanisms
-- **Monitoring**: Real-time system health
+Dynamic reorder point calculation
 
-## Contributing
+Emits StockLowEvent when stock < threshold
 
-1. Fork the repository
-2. Create a feature branch
-3. Implement changes with tests
-4. Submit a pull request
+Receives supplier webhooks to update order status
 
-## License
+ nightly simulator for demand updates
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+🚚 Supplier Service (Mock)
+Simple API that simulates supplier behavior:
+
+Accepts incoming purchase orders
+
+Waits a few seconds (async simulation)
+
+Sends webhook back to Inventory Service confirming “Delivered”
+
+💻 Frontend (Vue 3 + Bootstrap)
+Pages:
+
+Dashboard → overview of inventory and stock status
+
+Inventory → list items, edit thresholds, trigger manual reorder
+
+Item Detail → chart of last 30 days’ demand
+
+Orders → view all supplier orders and statuses
+
+Uses:
+
+@tanstack/vue-query for async data caching
+
+Pinia for state management
+
+Axios for API calls
+
+Bootstrap for UI styling
+
+🪄 Background Services
+InventoryMonitor: listens to StockLowEvent → creates supplier orders
+
+DemandSimulator: nightly task updates demand stats and recomputes reorder points
+
+PubSub: in-memory message broker (replaceable with RabbitMQ/Kafka later)
+
+⚙️ Data Flow Summary
+css
+Copy code
+Inventory.Api (EF + PostgreSQL)
+     ↓ emits
+[StockLowEvent] → InventoryMonitor → Supplier API
+     ↑ webhook
+Supplier.Mock → POST /api/webhooks/supplier
+     ↓
+Item stock updated + order marked delivered
+🪵 Logging
+Events logged in console or optionally to EventLogs table:
+
+Event	Example Log
+Stock low	Item 123 below reorder point (5 < 10)
+Order created	Supplier order #A12 for Item 123 (qty: 20)
+Webhook received	Order #A12 delivered on 2025-10-16
+Simulator run	Demand updated for 15 items
+
+📁 Project Structure
+bash
+Copy code
+/backend
+  ├─ Inventory.Domain/          (Entities, DTOs, Interfaces)
+  ├─ Inventory.Infrastructure/  (EF Core DbContext, Config, Migrations)
+  ├─ Inventory.App/             (Background Services, PubSub)
+  └─ Inventory.Api/             (Controllers, DI, Webhooks)
+
+/frontend
+  ├─ src/
+  │   ├─ views/        (Dashboard.vue, Inventory.vue, ItemDetail.vue, Orders.vue)
+  │   ├─ services/     (inventory.service.ts, orders.service.ts, http.ts)
+  │   ├─ router/       (App routes)
+  │   └─ store/        (Pinia stores)
+  └─ vite.config.ts
+💡 Tips
+CORS: must match frontend origin (http://localhost:5173)
+
+EF Relation errors: check .ToTable("items") matches your DB
+
+400 JSON conversion: ensure DTOs match backend signatures
+
+PostCSS warning: install @tailwindcss/postcss
+
+🧭 Tech Stack Summary
+Layer	Tech
+Backend	.NET 8, EF Core, PostgreSQL
+Frontend	Vue 3, Vite, Bootstrap, Pinia, Axios, Vue Query
+Events	In-memory Pub/Sub
+Optional Infra	Docker Compose for full-stack setup

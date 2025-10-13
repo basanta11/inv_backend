@@ -4,9 +4,8 @@ using Inventory.Infrastructure;
 using Inventory.Domain;
 using Inventory.App;
 public class SetThresholdPayload
-{
-    public int ReorderPoint { get; set; }
-    public int SafetyStock { get; set; }
+{public int? ManualReorderPoint { get; set; }
+    public int? safetyStock { get; set; }
 }
 
 [ApiController]
@@ -32,38 +31,66 @@ public class ItemsController : ControllerBase {
         return NoContent();
     }
 
-    [HttpGet]
-    public async Task<IActionResult> List([FromQuery] string? q, CancellationToken ct){
-        var query=_db.Items.AsNoTracking();
-        if(!string.IsNullOrWhiteSpace(q)) query=query.Where(x=>x.Name.Contains(q));
-        var data = await query.OrderBy(x=>x.Name).ToListAsync(ct);
-        return Ok(data.Select(x=> new {
-            x.Id,x.Sku,x.Name,x.Stock,
-            ReorderPoint = x.ManualReorderPoint ?? x.ComputedReorderPoint,
-            Status = (x.ManualReorderPoint ?? x.ComputedReorderPoint) > 0 && x.Stock < (x.ManualReorderPoint ?? x.ComputedReorderPoint) ? "Low":"OK"
-        }));
-    }
+   [HttpGet]
+public async Task<IActionResult> List([FromQuery] string? q, CancellationToken ct)
+{
+    var query = _db.Items.AsNoTracking();
+    if (!string.IsNullOrWhiteSpace(q))
+        query = query.Where(x => x.Name.Contains(q) || x.Sku.Contains(q));
+
+    var data = await query.OrderBy(x => x.Name).ToListAsync(ct);
+
+    return Ok(data.Select(x => new {
+        id = x.Id,
+        sku = x.Sku,
+        name = x.Name,
+        stock = x.Stock,
+
+        manualReorderPoint = x.ManualReorderPoint,                 // now visible to UI
+        safetyStock = x.SafetyStock,                                // now visible to UI
+        computedReorderPoint = x.ComputedReorderPoint,
+
+        reorderPoint = x.ManualReorderPoint ?? x.ComputedReorderPoint,
+        status = (x.ManualReorderPoint ?? x.ComputedReorderPoint) > 0 &&
+                 x.Stock < (x.ManualReorderPoint ?? x.ComputedReorderPoint) ? "LOW" : "OK"
+    }));
+}
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<Item>> Get(Guid id, CancellationToken ct){
         var it = await _db.Items.FindAsync(new object?[]{id}, ct);
         return it is null ? NotFound() : it;
     }
-
-    [HttpPatch("{id:guid}/reorder-threshold")]
-  public async Task<IActionResult> SetManual(Guid id, [FromBody] SetThresholdPayload payload, CancellationToken ct)
+[HttpPatch("{id:guid}/reorder-threshold")]
+public async Task<IActionResult> SetManual(Guid id, [FromBody] SetThresholdPayload payload, CancellationToken ct)
 {
     var it = await _db.Items.FindAsync(new object?[] { id }, ct);
     if (it == null) return NotFound();
 
-    it.ManualReorderPoint = payload.ReorderPoint;
-    it.SafetyStock = payload.SafetyStock;
+    it.ManualReorderPoint = payload.ManualReorderPoint;          // mapped to ManualReorderPoint
+    it.SafetyStock = payload.safetyStock ?? it.SafetyStock; // mapped to safteycheck
 
     await _db.SaveChangesAsync(ct);
-    return NoContent();
-}
 
-    [HttpPatch("{id:guid}/force-reorder")]
+    var dto = await _db.Items.AsNoTracking()
+        .Where(x => x.Id == id)
+        .Select(x => new {
+            id = x.Id,
+            sku = x.Sku,
+            name = x.Name,
+            stock = x.Stock,
+            manualReorderPoint = x.ManualReorderPoint,
+            safetyStock = x.SafetyStock,
+            computedReorderPoint = x.ComputedReorderPoint,
+            reorderPoint = x.ManualReorderPoint ?? x.ComputedReorderPoint,
+            status = (x.ManualReorderPoint ?? x.ComputedReorderPoint) > 0 &&
+                     x.Stock < (x.ManualReorderPoint ?? x.ComputedReorderPoint) ? "LOW" : "OK"
+        })
+        .FirstAsync(ct);
+
+    return Ok(dto);
+}
+    [HttpPost("{id:guid}/force-reorder")]
     public async Task<IActionResult> ForceReorder(Guid id, [FromBody] int qty, CancellationToken ct){
         await _bus.PublishAsync(new StockLowEvent(id,0,0), ct);
         return Accepted();

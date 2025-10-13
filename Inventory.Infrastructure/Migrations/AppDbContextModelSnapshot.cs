@@ -63,7 +63,8 @@ namespace Inventory.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("SafetyStock")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("safteycheck");
 
                     b.Property<string>("Sku")
                         .IsRequired()

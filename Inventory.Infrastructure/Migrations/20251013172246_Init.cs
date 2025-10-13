@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Inventory.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialPg : Migration
+    public partial class Init : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -20,7 +20,7 @@ namespace Inventory.Infrastructure.Migrations
                     Name = table.Column<string>(type: "TEXT", nullable: false),
                     Stock = table.Column<int>(type: "INTEGER", nullable: false),
                     LeadTimeDays = table.Column<int>(type: "INTEGER", nullable: false),
-                    SafetyStock = table.Column<int>(type: "INTEGER", nullable: false),
+                    safteycheck = table.Column<int>(type: "INTEGER", nullable: false),
                     ManualReorderPoint = table.Column<int>(type: "INTEGER", nullable: true),
                     ComputedReorderPoint = table.Column<int>(type: "INTEGER", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)

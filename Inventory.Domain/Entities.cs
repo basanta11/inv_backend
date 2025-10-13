@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace Inventory.Domain;
 
 public enum OrderStatus { Pending, Confirmed, Failed }
@@ -8,8 +10,11 @@ public class Item {
     public string Name { get; set; } = default!;
     public int Stock { get; set; }
     public int LeadTimeDays { get; set; } = 3;
-    public int SafetyStock { get; set; } = 5;
+    [Column("safteycheck")]            // map to the typo column (no DB change)
+    public int SafetyStock { get; set; }
+
     public int? ManualReorderPoint { get; set; }
+
     public int ComputedReorderPoint { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
@@ -30,6 +35,7 @@ public class SupplierOrder {
     public OrderStatus Status { get; set; } = OrderStatus.Pending;
     public string? SupplierRef { get; set; }
     public Item Item { get; set; } = default!;
+
 }
 
 public record StockLowEvent(Guid ItemId, int Stock, int ReorderPoint);

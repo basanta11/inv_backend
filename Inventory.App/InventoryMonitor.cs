@@ -19,20 +19,41 @@ public class InventoryMonitor : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested)
+        // optional: guard against exceptions -> no tight loops
+        var timer = new PeriodicTimer(TimeSpan.FromSeconds(30)); // check every 30s
+        while (!ct.IsCancellationRequested && await timer.WaitForNextTickAsync(ct))
         {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-            var items = await db.Items.AsNoTracking().ToListAsync(ct);
-            foreach (var i in items)
+            try
             {
-                var thr = i.ManualReorderPoint ?? i.ComputedReorderPoint;
-                if (thr > 0 && i.Stock < thr)
-                    await _bus.PublishAsync(new StockLowEvent(i.Id, i.Stock, thr), ct);
-            }
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            await Task.Delay(TimeSpan.FromSeconds(10), ct);
+                var items = await db.Items.AsNoTracking().ToListAsync(ct);
+                Console.WriteLine($"[Monitor] Checked {items.Count} items at {DateTime.Now}");
+
+                foreach (var i in items)
+                {
+                    var thr = i.ManualReorderPoint ?? i.ComputedReorderPoint;
+
+                    if (thr > 0 && i.Stock < thr)
+                    {
+                        Console.WriteLine($"[Monitor] PUBLISH StockLowEvent for {i.Name} (stock={i.Stock}, reorder={thr})");
+                        await _bus.PublishAsync(new StockLowEvent(i.Id, i.Stock, thr), ct);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[Monitor] Item {i.Name}: stock={i.Stock}, reorder={thr}");
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Monitor] Error: {ex.Message}");
+                // small backoff so we don't tight-loop on errors
+                await Task.Delay(1000, ct);
+            }
         }
     }
 }
+
